@@ -361,13 +361,9 @@ def make_location_popup(location):
     )
 
     if location_type_raw.lower() == "consumer":
-        image_uri = image_data_uri(
-            "images/mgit_substation.jpg"
-        )
+        image_uri = image_data_uri("images/mgit_college.jpg")
     else:
-        image_uri = image_data_uri(
-            location.get("image_path")
-        )
+        image_uri = image_data_uri(location.get("image_path"))
 
     coordinates = valid_coordinates(location)
 
