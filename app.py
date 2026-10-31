@@ -19,12 +19,12 @@ IMAGES_DIR = PROJECT_DIR / "images"
 API_BASE_URL = "https://telanganapowerlinemap.fastapicloud.dev"
 
 st.set_page_config(
-    page_title="Telangana Power Infrastructure Map",
+    page_title="POWER TRANSMISSION FROM SRISAILAM POWER PLANT TO MGIT",
     page_icon="⚡",
     layout="wide",
 )
 
-st.title("⚡ Telangana Power Infrastructure Map")
+st.title("⚡ POWER TRANSMISSION FROM SRISAILAM POWER PLANT TO MGIT")
 
 st.caption(
     "Interactive map of power stations, substations, "
@@ -132,23 +132,68 @@ def line_voltage(line):
     )
 
 
+# ============================================================
+# IMAGE PATHS
+# Supports images stored in the images folder.
+# ============================================================
+
 def safe_image_path(relative_path):
     relative_path = safe_text(relative_path, "")
 
     if not relative_path:
         return None
 
-    candidate = (PROJECT_DIR / relative_path).resolve()
+    cleaned = relative_path.replace("\\", "/").lstrip("/")
+
+    if cleaned.startswith("images/"):
+        candidate = (PROJECT_DIR / cleaned).resolve()
+    else:
+        candidate = (IMAGES_DIR / Path(cleaned).name).resolve()
 
     try:
         candidate.relative_to(IMAGES_DIR.resolve())
     except ValueError:
         return None
 
-    if candidate.is_file():
-        return candidate
+    return candidate if candidate.is_file() else None
 
-    return None
+
+def consumer_illustration_data_uri():
+    """Create a residential electricity consumer illustration."""
+
+    svg = '''<svg xmlns="http://www.w3.org/2000/svg"
+    width="640" height="300" viewBox="0 0 640 300">
+    <rect width="640" height="300" rx="18" fill="#f2f7fb"/>
+    <circle cx="520" cy="55" r="27" fill="#ffd166"/>
+    <path d="M90 145 L230 45 L370 145 V255 H90 Z"
+    fill="#ffffff" stroke="#536b82" stroke-width="7"
+    stroke-linejoin="round"/>
+    <path d="M62 150 L230 28 L398 150"
+    fill="none" stroke="#e45b4f" stroke-width="12"
+    stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="205" y="177" width="52" height="78" rx="5"
+    fill="#d8e8f5" stroke="#536b82" stroke-width="5"/>
+    <rect x="286" y="162" width="55" height="42" rx="5"
+    fill="#e9f3fb" stroke="#536b82" stroke-width="5"/>
+    <path d="M310 168 L299 184 H312 L305 198
+    L330 178 H316 L323 168 Z" fill="#e45b4f"/>
+    <path d="M405 105 V248 M382 132 H428 M390 115 H420
+    M390 150 H420 M392 105 L405 83 L418 105"
+    stroke="#536b82" stroke-width="7" stroke-linecap="round"
+    fill="none"/>
+    <path d="M430 145 C465 130 475 165 505 150
+    S550 140 575 154" stroke="#e45b4f" stroke-width="5"
+    fill="none" stroke-linecap="round"/>
+    <text x="320" y="282" text-anchor="middle"
+    font-family="Arial,sans-serif" font-size="20"
+    fill="#34495e">Residential Electricity Consumer</text>
+    </svg>'''
+
+    encoded = base64.b64encode(
+        svg.encode("utf-8")
+    ).decode("ascii")
+
+    return f"data:image/svg+xml;base64,{encoded}"
 
 
 def image_data_uri(relative_path):
@@ -183,7 +228,7 @@ lines, lines_error = fetch_data("lines")
 if locations_error or lines_error:
     st.error(
         "Unable to load data from FastAPI. "
-        "Make sure the API is running."
+        "Please check the deployed API."
     )
 
     if locations_error:
@@ -191,11 +236,6 @@ if locations_error or lines_error:
 
     if lines_error:
         st.write("Power lines:", lines_error)
-
-    st.code(
-        "python -m uvicorn api:app --reload",
-        language="powershell",
-    )
 
     st.stop()
 
@@ -278,7 +318,6 @@ if all_coordinates:
     center_lon = sum(
         point[1] for point in all_coordinates
     ) / len(all_coordinates)
-
 else:
     center_lat, center_lon = 17.8, 79.1
 
@@ -307,10 +346,11 @@ def make_location_popup(location):
         safe_text(location.get("name"), "Unnamed location")
     )
 
-    location_type = html.escape(
-        safe_text(location.get("location_type"))
+    location_type_raw = safe_text(
+        location.get("location_type"), ""
     )
 
+    location_type = html.escape(location_type_raw)
     voltage = html.escape(location_voltage(location))
 
     details = html.escape(
@@ -320,9 +360,21 @@ def make_location_popup(location):
         )
     )
 
-    image_uri = image_data_uri(
-        location.get("image_path")
-    )
+    if location_type_raw.lower() == "consumer":
+        image_uri = consumer_illustration_data_uri()
+    else:
+        image_uri = image_data_uri(
+            location.get("image_path")
+        )
+
+    coordinates = valid_coordinates(location)
+
+    if coordinates is not None:
+        latitude_text = f"{coordinates[0]:.6f}"
+        longitude_text = f"{coordinates[1]:.6f}"
+    else:
+        latitude_text = "Unavailable in API data"
+        longitude_text = "Unavailable in API data"
 
     image_html = ""
 
@@ -348,6 +400,8 @@ def make_location_popup(location):
 
         <b>Function:</b> {location_type}<br>
         <b>Voltage:</b> {voltage}<br>
+        <b>Latitude:</b> {latitude_text}<br>
+        <b>Longitude:</b> {longitude_text}<br>
 
         <p>{details}</p>
     </div>
@@ -395,13 +449,10 @@ for location in filtered_locations:
 
 # ============================================================
 # DRAW PLAIN RED POWER-FLOW LINES
-# No line popups, descriptions, tooltips, or click interaction.
+# No line popups, descriptions, or click interaction.
 # ============================================================
 
-drawn_lines = 0
-
 if show_connections:
-
     for line in lines:
         from_id = safe_text(
             line.get("from_location_id"), ""
@@ -411,28 +462,24 @@ if show_connections:
             line.get("to_location_id"), ""
         )
 
-        # Find the connected locations.
         from_location = location_lookup.get(from_id)
         to_location = location_lookup.get(to_id)
 
         if from_location is None or to_location is None:
             continue
 
-        # Respect the location-type filters.
         if (
             from_id not in visible_location_ids
             or to_id not in visible_location_ids
         ):
             continue
 
-        # Read coordinates from the API records.
         start = valid_coordinates(from_location)
         end = valid_coordinates(to_location)
 
         if start is None or end is None:
             continue
 
-        # Add a plain solid red line.
         folium.PolyLine(
             locations=[start, end],
             color="red",
@@ -440,8 +487,6 @@ if show_connections:
             opacity=0.9,
             interactive=False,
         ).add_to(power_map)
-
-        drawn_lines += 1
 
 
 # ============================================================
@@ -466,7 +511,6 @@ if not filtered_locations:
         "No locations match the selected filters. "
         "Select at least one location type."
     )
-
 else:
     map_html = power_map.get_root().render()
 
@@ -538,7 +582,6 @@ with tab_locations:
             file_name="telangana_power_locations.csv",
             mime="text/csv",
         )
-
     else:
         st.info("No location records are available.")
 
@@ -606,7 +649,6 @@ with tab_lines:
             file_name="telangana_power_lines.csv",
             mime="text/csv",
         )
-
     else:
         st.info("No power-line records are available.")
 
@@ -619,6 +661,6 @@ st.divider()
 
 st.caption(
     "Telangana Power Infrastructure Map | "
-    "Data provided by the local FastAPI backend. "
+    "Data provided by the FastAPI backend. "
     "Coordinates, voltage ratings, and routes require verification."
 )
