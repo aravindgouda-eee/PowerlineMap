@@ -361,7 +361,9 @@ def make_location_popup(location):
     )
 
     if location_type_raw.lower() == "consumer":
-        image_uri = consumer_illustration_data_uri()
+        image_uri = image_data_uri(
+            "images/mgit_substation.jpg"
+        )
     else:
         image_uri = image_data_uri(
             location.get("image_path")
